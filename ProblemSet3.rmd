@@ -1,0 +1,203 @@
+---
+title: "Predicting the 2020 US Electrion Result using Logistic models"
+author: "Xingyu Pu, Geng Li, Yuchwn Wu, Zhihuan Shao"
+date: "Oct.31, 2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r setup, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(knitr)
+
+# Loading in the cleaned survey Data
+survey_data <- read_csv("~/Desktop/STA304/STA304-PS3/survey_data.csv")
+
+# Loading in the cleaned census Data
+census_data <- read_csv("~/Desktop/STA304/STA304-PS3/census_data.csv")
+
+```
+
+# Model
+
+In this report, we are interested in exploring a few factors that might contribute to the voting of new US president candidates and based on the  Nationscape Data Set, which is collected by Democracy Fund Voter Study Group and UCLA Political Scientists Chris Tausanovitch and Lynn Vavreck through interviewing people in nearly every county, congressional district, and mid-sized U.S. city in the leadup to the 2020 election, and using those comparatively small survey data to fit a model onto census data to predict the potential outcome of 2020 US Election via post-stratification technique.
+
+
+## Model Specifics
+
+In this study, we will use logistic model with a few factors that we are interested in, including gender, race, and educational level. We are choosing those factors in several reasons:
+
+1. **Gender** is considered since there could exist a gender preference due to the major candidates of this years election are both males (Trump and Biden), and with D.Trump's potential inappropriate behaviors to females in recent years, we suspect that gender could be one of a deciding factors.
+
+2. **Race** is one the most important deciding factors in our opinions, based on the fact that most policies that D.Trump has implemented and suggested have a clear racial preference, especially the attitude towards immigrants and international students. Thus, we consider race to be a huge factors that could contribute to the result of election. Due to the limitation of the model, we categorize those races into 4 simple categories - White, Black or African American, Asian, and Others for analysis
+
+3. **Educational level**, however this might not be explicitly shown as an important factor, the truth that a great number of US citizens believe the words from D.Trump is because of lacking certain higher level of knowledge or even common sense (e.g. drinking bleach to kill coronavirus), and education is one of the essential method to avoid that. Thus, we believe there should be a certain level of connections between educational levels and willingness to vote for Trump or Biden. Due to the many levels of educations, we rank the education background from the lowest (0) to the highest (10) for analysis
+
+With the background on choosing models and components, the logistic model we are using is:
+
+$$\log{(\frac{\hat{p}}{1-\hat{p}})} = \hat{\beta_0}+\hat{\beta_1}X_{Male}+\hat{\beta_2}X_{Black/African American}+\hat{\beta_3}X_{Other Races}+\hat{\beta_4}X_{White}+\hat{\beta_5}X_{EducationLevel} $$
+
+Where $\hat{p}$ represents the voters estimated probability of voting for the candidate. Similarly, $\hat{\beta_0}$ represents the intercept of the model, and is the logistic estimator of probability of voting for the candidate then the voter is an uneducated Asian female. Additionally, $\hat{\beta_1}$, $\hat{\beta_2}$, $\hat{\beta_3}$, $\hat{\beta_4}$, $\hat{\beta_5}$ represent the factors that different race, gender, and educational levels can contributed to different logistic estimator, which represent the probability of voting the certain candidate respectively.
+
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+
+# Creating logistic Models for both Trump and Biden results
+model_trump <- glm(vote_trump ~ gender + race + edu_level , 
+             data=survey_data, family= "binomial")
+
+model_biden <- glm(vote_biden ~ gender + race + edu_level , 
+             data=survey_data, family= "binomial")
+
+
+```
+
+## Post-Stratification 
+
+We also need to use post-stratification technique to predict the proportion of voters that might vote for either Trump or Biden in order to complete our hypothesis. Choosing the same parameters, we divided the original census data into cells based off gender, race, and education levels. Using the model fitted above we can predict the estimated proportion of voters in each cell. Then, by weighting according to the cell size and sum those values and divided by the entire population size, we can get a glimpse of the potential proportion of voters that might vote for either Trump or Biden. The reasons that we choose those factors to split the cells have been address in Model section.
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+
+# post-stratification analysis for both candidates
+census_data$log_est_trump <-
+  model_trump %>%
+  predict(newdata = census_data)
+
+census_data$log_est_biden <-
+  model_biden %>%
+  predict(newdata = census_data)
+
+# calculating the estimated probability of winning/proportion of voters in each cell
+census_data$est_trump <-
+  exp(census_data$log_est_trump)/(1+exp(census_data$log_est_trump))
+
+census_data$est_biden <-
+  exp(census_data$log_est_biden)/(1+exp(census_data$log_est_biden))
+
+# merging cells by weighting the number of voters in each cell
+w1 <- census_data %>%
+  mutate(predict_trump = est_trump*n) %>%
+  summarise(trump_win = sum(predict_trump)/sum(n))
+
+w2 <- census_data %>%
+  mutate(predict_biden = est_biden*n) %>%
+  summarise(biden_win = sum(predict_biden)/sum(n))
+
+```
+
+
+# Results
+
+Using the survey data, we can get the predicted model for Trump and Biden individually:
+
+Voting for Trump:
+$$\log{(\frac{\hat{p}}{1-\hat{p}})} = -1.486+0.440X_{Male}-1.123X_{Black/African American}+0.150X_{Other Races}+0.959X_{White}+0.020X_{EducationLevel} $$
+
+Voting for Biden:
+$$\log{(\frac{\hat{p}}{1-\hat{p}})} = -0.394-0.3450X_{Male}+0.754X_{Black/African American}-0.157X_{Other Races}-0.500X_{White}+0.097X_{EducationLevel} $$
+And by using those models, we calculated the proportion of voters that might be willing to voter for these two candidates individually, shown as below:
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+
+# showing the parameters in mathematical equations rather than summary results for readers
+# summary(model_biden)
+# summary(model_trump)
+
+# labels for column names
+c1 <- c("Republican Party", "Democratic Party")
+
+# input parameters of proportion of voters
+c2 <- c(100*w1$trump_win, 100*w2$biden_win) %>% round(digits = 2)
+
+# labels of candidate names
+c3 <- c("Donald Trump", "Joe Biden")
+  
+# making tables to visualize the results predicted by the model
+table <- rbind(c3, c2)
+colnames(table) <- c1
+rownames(table) <- c("Candidate Names","Est Chance of Winning (Percent)")
+kable(table)
+
+```
+
+We predicted that there expects to be **39.35%** of people that are willing to vote for Donald Trump, and **42.37%** of people that are willing to vote for Joe Biden. This results are based of This is based off our post-stratification analysis of the proportion of voters by a logistic model, which accounted for genders, races, and levels of education.
+
+As for each individual parameters, a barplot is shown below:
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE, fig.height=5, fig.width=8}
+
+#creating plots based on post-stratification data
+census_data %>%
+  mutate(predict_biden = est_biden*n, predict_trump = est_trump*n) %>%
+  group_by(race, gender) %>% 
+  summarise(`Joe Biden` = sum(predict_biden)/sum(n),
+            `Donald Trump` = sum(predict_trump)/sum(n)) %>% 
+  gather(key = "Candidate", value = "rate", -race, -gender) %>% 
+  ggplot(aes(x = race,y = rate)) +
+  geom_bar(stat="identity", aes(fill = Candidate), position = "dodge") +
+  facet_wrap(.~gender) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = "Races", y = "Predicted Proportion of People Voting", 
+       title = "Predicted Proportion of People Voting for Trump/Biden based of Races", 
+       subtitle = "Differenciated by Genders",
+       caption = "Figure 1") +
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1, size = 5), text = element_text(size=7))
+
+```
+
+As shown in Figure 1, in race wise, most races seem to be more willing to vote for Joe Biden, as well as both genders, however, the advantages seem less obvious when it comes to white voters, especially male white voters, the only exception that are more willing to vote for Donald Trump. This is as expected. Other than that, on a large scale, people are more willing to vote for Joe Biden rather than Donald Trump, however, the results from our post-stratification shows that the differences between winning rate is not as obvious as shown in the graph, most possibly due to the large population of white male voters that are willing to support Trump. 
+
+# Discussion
+
+In this study, we performed a model fitting using survey data on a small scale of people that have taken the survey, and using post-stratification technique to predict the willingness to vote for Trump or Biden on a large scale using census data. Using logistic model allows us to predict the outcome of voting based on genders, races, and educational levels, and we discover that some of the parameters are not as important as we expected before running the analysis (e.g. educational levels).
+
+Based off the estimated proportion of voters in favor of voting for Democratic Party being **42.37%** and for Republican Party being **39.35%**, our model successfully predicted that Joe Biden should have a slight higher chance of winning comparing to Donald Trump, however, the difference is much smaller than expected. Considering the population 
+
+## Weaknesses
+
+However, there are still a few weakness in this analysis:
+
+1. The categorical values we use, for example, races and educational level, are still too arbitrary. Due to the fact that the survey data and census data were using different scales, there can be some errors existing. The educational level in the survey ranges from primary school to doctoral, but in the census dataset, Grade8 to Grade12 were detailed listed as individual categories. This results in that when ranking educational levels, people in the survey that had college experience are not comparable to those in the census data (that those people had only finished high school). And this could induce some error when using the model to fit census data for prediction.
+
+2. The models we use are still not fitted perfected, as the residuals are still quite large (detailed model summary has been shown as additional information in appendix). We haven't implemented methods to increase the accuracy of the models, thus this could also give us less accurate predictions of the results.
+
+## Next Steps
+
+The next steps of our analysis will include finding more important parameters that could affect the predictions of the results, and validating the model with real voting results. Some other parameters, including voting in 2016, martial status, income level, and working condition, could all contribute to impact the potential willingness to vote for Biden or Trump, as the policies of two parties are quite different. Validating our model when the real election results come out could give us a better understanding of how those parameters actually contribute to the proportion of voting, and what other significant variables should we consider if we are going to perform another similar analysis.
+
+
+# References
+
+1. Tausanovitch, Chris and Lynn Vavreck. 2020. Democracy Fund + UCLA Nationscape, October 10-17, 2019 (version 20200814). Retrieved from https://www.voterstudygroup.org/publication/nationscape-data-set
+
+2. Steven Ruggles, Sarah Flood, Ronald Goeken, Josiah Grover, Erin Meyer, Jose Pacas and Matthew Sobek. IPUMS USA: Version 10.0 [dataset]. Minneapolis, MN: IPUMS, 2020. https://doi.org/10.18128/D010.V10.0
+
+\newpage
+
+# Appendix
+
+# Code and data supporting this analysis is available at: https://github.com/xingyupu/PS3
+
+*Logistic model for Joe Biden's voters proportion estimating:*
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+
+summary(model_biden)
+
+```
+\newpage
+*Logistic model for Donald Trump's voters proportion estimating:*
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+
+summary(model_trump)
+
+```
+
+
+
+
